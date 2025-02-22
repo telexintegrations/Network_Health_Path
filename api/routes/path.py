@@ -41,7 +41,7 @@ def parse_packet_loss(output: str, target_url: str):
 
     return "\n".join(packet_loss_report) if packet_loss_report else f"No packet loss detected to {target_url}."
 
-def run_network_diagnostics(target: str):
+
     """Runs `pathping` (Windows) or `mtr` (Linux/macOS) to check packet loss."""
     system = platform.system()
 
@@ -66,6 +66,7 @@ def run_network_diagnostics(target: str):
     except Exception as e:
         return f"❌ An unexpected error occurred: {e}"
 
+
 async def check_network_health(payload: MonitorPayload):
     """Runs network diagnostics and sends results to `return_url`."""
     settings_dict = {setting.label.lower(): setting.default for setting in payload.settings}
@@ -87,6 +88,7 @@ async def check_network_health(payload: MonitorPayload):
         }
         response = await client.post(payload.return_url, json=data)
         print(f"📡 Response: {response.status_code}")
+        print(f"data: {data}")
         print(response.json())
 
 @router.post("/network-health")
