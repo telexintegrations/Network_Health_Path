@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import List
 import httpx
 import logging
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -56,11 +57,19 @@ def run_network_diagnostics(target: str) -> str:
     if system == "Windows":
         command = ["pathping", "-q", "5", "-p", "100", target]  # Windows command
     else:
-        command = ["mtr", "-r", "-c", "5", target]  # Linux/macOS command
+        command = ["mtr", "-rw", "-c", "60", target]  # Linux/macOS command
 
     try:
+        start_time = time.time() 
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        output, error = process.communicate()  # No timeout, let it run as long as needed
+
+        while process.poll() is None:
+            if time.time() - start_time > 60:  # If 60 seconds pass, terminate
+                process.terminate()
+                break
+            time.sleep(1)
+
+        output, error = process.communicate(timeout=60)  # No timeout, let it run as long as needed
 
         logger.info("Raw Network Diagnostic Output:\n%s", output)
 
