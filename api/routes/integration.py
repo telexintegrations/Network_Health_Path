@@ -18,7 +18,7 @@ async def integration(request: Request):
             "descriptions": {
                 "app_name": "Network Health Path",
                 "app_description": "Troubleshooting network outage to get the exact path causing packet loss and report to the telex channel.",
-                "app_logo": "https://asset.cloudinary.com/dcoalw1ak/ee4703329258ec0324d4b836c6325bcd",
+                "app_logo": "https://asset.cloudinary.com/dcoalw1ak/59753e5fc8b83bf1380e8297e89f7b2e",
                 "app_url": f"{base_url}",
                 "background_color": "#fff"
             },
