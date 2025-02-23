@@ -7,7 +7,7 @@ router = APIRouter()
 @router.get("/integration.json")
 async def integration(request: Request):
     # base_url = str(request.base_url).rstrip("/")
-    base_url = "https://network-health-path.onrender.com"
+    base_url = "ec2-13-51-55-146.eu-north-1.compute.amazonaws.com"
     # telex_channel_webhook = "https://ping.telex.im/v1/webhooks/019519ce-8dd0-77d8-a5b4-20227ee0b485"
     return{
         "data" : {
