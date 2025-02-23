@@ -83,13 +83,17 @@ async def check_network_health(payload: MonitorPayload):
     logger.info(f"🔍 Running network diagnostics on {target_url}...")
     output = run_network_diagnostics(target_url)  # Call the function here
 
+    packet_loss_detected = "⚠️" in output 
+
     async with httpx.AsyncClient() as client:
         data = {
             "message": output,
             "username": "Network Path Health",
             "event_name": "Network Diagnostics",
-            "status": "success" if "No packet loss detected" in output else "warning"
+            "status": "success"
         }
+
+        logger.info(f"Sending data to Telex channel: {data}")
         try:
             response = await client.post(payload.return_url, json=data)
             logger.info(f"📡 Response: {response.status_code}")
