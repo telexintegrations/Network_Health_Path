@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from typing import List
 import httpx
 import logging
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,28 +27,35 @@ class MonitorPayload(BaseModel):
 router = APIRouter()
 
 def parse_packet_loss(output: str, target_url: str) -> str:
-    """Parses the network diagnostic output to detect packet loss at each hop."""
+    """Parses the network diagnostic output to detect packet loss at each hop, skipping missing RTT values."""
     packet_loss_report = []
-    
-    # Windows `pathping` output pattern (Example: "  2   192.168.1.1      5/ 100 =  5%  |")
-    pathping_regex = re.compile(r"(\d+)/\s*\d+\s*=\s*(\d+)%.*?(\d+\.\d+\.\d+\.\d+)")
 
-    # Linux/macOS `mtr` output pattern (Example: "192.168.1.1        5.0%   |")
-    mtr_regex = re.compile(r"(\d+\.\d+\.\d+\.\d+)\s+(\d+)%")
+    hop_regex = re.compile(
+        r"^\s*(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)"
+    )
 
     for line in output.split("\n"):
-        match = pathping_regex.search(line) or mtr_regex.search(line)
+        match = hop_regex.search(line)
         if match:
-            loss_percent = int(match.group(2))  # Packet loss percentage
-            ip_address = match.group(3) if pathping_regex.search(line) else match.group(1)  # IP Address
+            hop_number = match.group(1)
+            ip_address = match.group(2)
+            rtt = match.group(3)
 
-            if loss_percent > 0:
-                if ip_address:
-                    packet_loss_report.append(f"⚠️ {loss_percent}% packet loss detected at {ip_address} while reaching {target_url}.")
-                else:
-                    packet_loss_report.append(f"⚠️ {loss_percent}% packet loss detected at an unknown hop while reaching {target_url}.")
+            # Skip the hop if RTT is missing or shows as "---"
+            if rtt == "*" or rtt == "---":
+                continue
+
+            # Check for packet loss in later parts of the line
+            loss_match = re.search(r"(\d+)/\s*\d+\s*=\s*(\d+)%", line)
+            if loss_match:
+                loss_percent = int(loss_match.group(2))
+                if loss_percent > 0:
+                    packet_loss_report.append(
+                        f"⚠️ {loss_percent}% packet loss detected at {ip_address} (Hop {hop_number}) while reaching {target_url}."
+                    )
 
     return "\n".join(packet_loss_report) if packet_loss_report else f"No packet loss detected to {target_url}."
+
 
 def run_network_diagnostics(target: str) -> str:
     """Runs `pathping` (Windows) or `mtr` (Linux/macOS) to check packet loss."""
@@ -56,11 +64,19 @@ def run_network_diagnostics(target: str) -> str:
     if system == "Windows":
         command = ["pathping", "-q", "5", "-p", "100", target]  # Windows command
     else:
-        command = ["mtr", "-r", "-c", "5", target]  # Linux/macOS command
+        command = ["mtr", "-rw", "-c", "60", target]  # Linux/macOS command
 
     try:
+        start_time = time.time() 
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        output, error = process.communicate()  # No timeout, let it run as long as needed
+
+        while process.poll() is None:
+            if time.time() - start_time > 60:  # If 60 seconds pass, terminate
+                process.terminate()
+                break
+            time.sleep(1)
+
+        output, error = process.communicate(timeout=60)  # No timeout, let it run as long as needed
 
         logger.info("Raw Network Diagnostic Output:\n%s", output)
 
