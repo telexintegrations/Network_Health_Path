@@ -27,11 +27,11 @@ class MonitorPayload(BaseModel):
 router = APIRouter()
 
 def parse_packet_loss(output: str, target_url: str) -> str:
-    """Parses the network diagnostic output to detect packet loss at each hop, skipping missing RTT values."""
+    """Parses the network diagnostic output to detect packet loss at each hop, handling missing RTT values."""
     packet_loss_report = []
 
     hop_regex = re.compile(
-        r"^\s*(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)"
+        r"^\s*(\d+)\s+([\d\.\-*]+)\s+(\d+ms|\*|-{3})"
     )
 
     for line in output.split("\n"):
@@ -41,11 +41,11 @@ def parse_packet_loss(output: str, target_url: str) -> str:
             ip_address = match.group(2)
             rtt = match.group(3)
 
-            # Skip the hop if RTT is missing or shows as "---"
-            if rtt == "*" or rtt == "---":
+            # Skip hops where RTT is missing or displayed as "---"
+            if rtt in ["*", "---"]:
                 continue
 
-            # Check for packet loss in later parts of the line
+            # Detect packet loss
             loss_match = re.search(r"(\d+)/\s*\d+\s*=\s*(\d+)%", line)
             if loss_match:
                 loss_percent = int(loss_match.group(2))
@@ -62,28 +62,21 @@ def run_network_diagnostics(target: str) -> str:
     system = platform.system()
 
     if system == "Windows":
-        command = ["pathping", "-q", "5", "-p", "100", target]  # Windows command
+        command = ["pathping", "-q", "5", "-p", "100", target]
     else:
-        command = ["mtr", "-rw", "-c", "60", target]  # Linux/macOS command
+        command = ["mtr", "-rw", "-c", "60", target]
 
     try:
-        start_time = time.time() 
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-        while process.poll() is None:
-            if time.time() - start_time > 60:  # If 60 seconds pass, terminate
-                process.terminate()
-                break
-            time.sleep(1)
-
-        output, error = process.communicate(timeout=60)  # No timeout, let it run as long as needed
+        output, error = process.communicate()  # Waits until process completes
 
         logger.info("Raw Network Diagnostic Output:\n%s", output)
 
         if process.returncode == 0:
-            return parse_packet_loss(output, target)  # Pass target_url for formatting
+            return parse_packet_loss(output, target)
         else:
             return f"❌ Error running network diagnostics: {error}"
+    
     except Exception as e:
         return f"❌ An unexpected error occurred: {e}"
 
@@ -97,24 +90,20 @@ async def check_network_health(payload: MonitorPayload):
         return
 
     logger.info(f"🔍 Running network diagnostics on {target_url}...")
-    output = run_network_diagnostics(target_url)  # Call the function here
-
-    packet_loss_detected = "⚠️" in output 
+    output = run_network_diagnostics(target_url)
 
     async with httpx.AsyncClient() as client:
         data = {
             "message": output,
             "username": "Network Path Health",
             "event_name": "Network Diagnostics",
-            "status": "success"
+            "status": "success" if "❌" not in output else "error"
         }
 
         logger.info(f"Sending data to Telex channel: {data}")
         try:
             response = await client.post(payload.return_url, json=data)
             logger.info(f"📡 Response: {response.status_code}")
-            logger.info(f"Data: {data}")
-            logger.info(response.json())
         except httpx.RequestError as e:
             logger.error(f"❌ Failed to send data to {payload.return_url}: {e}")
 
